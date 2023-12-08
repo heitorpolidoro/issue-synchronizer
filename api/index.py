@@ -20,6 +20,9 @@ ISSUE_SYNCHRONIZER_AREA_TEMPLATE = """
 <!-- ISSUE SYNCHRONIZED:END -->
 """
 
+SECTION_PATTERN = r"<!-- *$section:BEGIN *-->.*<!-- *$section:END *-->"
+SECTION = "ISSUE SYNCHRONIZED"
+
 
 def dict_to_obj(d: dict) -> SimpleNamespace:
     if isinstance(d, dict):
@@ -41,22 +44,14 @@ def get_command(body, command_prefix):
 
 
 def clear_body(body):
-    section = "ISSUE SYNCHRONIZED"
     command_prefix = "sync"
     command_pattern = rf"\[{command_prefix}:(.+?)\]"
     return re.sub(
-        rf"<!-- *{section}:BEGIN *-->.*<!-- *{section}:END *-->",
+        Template(SECTION_PATTERN).substitute(section=SECTION),
         "",
         re.sub(command_pattern, "", body),
         flags=re.DOTALL).strip()
 
-
-# def replace_section(readme_content, section, content):
-#     if not re.search(rf"<!-- {section}: starts -->.*<!-- {section}: ends -->", readme_content, flags=re.DOTALL):
-#         logging.warning(
-#             f"Section {section} no found in README.md\n<!-- {section}: starts -->\n<!-- {section}: ends -->")
-#     return re.sub(rf"<!-- {section}: starts -->.*<!-- {section}: ends -->",
-#                   f"<!-- {section}: starts -->\n{content}\n<!-- {section}: ends -->", readme_content, flags=re.DOTALL)
 
 def add_badge(body, repo, issue_number):
     repo_full_name = repo.full_name
@@ -108,15 +103,13 @@ class Handler(BaseHTTPRequestHandler):
             if issue := payload.issue:
                 logging.info(f"Issue {action}: {payload.repository.full_name}#{issue.number}")
                 if action == "opened":
-                    repo_to_sync = get_command(issue.body, "sync")
-                    if repo_to_sync:
+                    if repo_to_sync := get_command(issue.body, "sync"):
                         repo_from = get_repo(payload.repository.full_name, payload.installation.id)
                         repo_to = get_repo(repo_to_sync, payload.installation.id)
                         gh_issue = repo_from.get_issue(issue.number)
                         create_synced_issue(gh_issue, repo_from, repo_to)
                 else:
-                    issue_to_sync = get_command(issue.body, "synced")
-                    if issue_to_sync:
+                    if issue_to_sync := get_command(issue.body, "synced"):
                         repo_to_sync, issue_number = issue_to_sync.split("#")
                         repo_to = get_repo(repo_to_sync, payload.installation.id)
                         gh_issue = repo_to.get_issue(int(issue_number))
@@ -146,9 +139,26 @@ class Handler(BaseHTTPRequestHandler):
                             gh_issue.edit(state="open")
                         else:
                             logging.info(f"Ignoring action {action}")
+                    elif re.search(Template(SECTION_PATTERN).substitute(section=SECTION),
+                                   getattr(payload.changes.body, "from"), flags=re.DOTALL):
+                        issue_to_sync = get_command(getattr(payload.changes.body, "from"), "synced")
+                        repo_to_sync, issue_number = issue_to_sync.split("#")
+                        repo_to = get_repo(repo_to_sync, payload.installation.id)
+                        gh_issue = repo_to.get_issue(int(issue_number))
 
-        # handle payload here
-        # print(payload)
+                        logging.warning(
+                            f"Issue Synchronizer Badge removed from {payload.repository.full_name}#{issue.number}!"
+                            f" Removing from {repo_to.full_name}#{gh_issue.number}"
+                        )
+                        gh_issue.edit(body=clear_body(gh_issue.body))
+                        warning_message = (":warning: Issue Synchronizer Badge removed!\n"
+                                           "Lost synchronization with $issue")
+                        gh_issue.create_comment(Template(warning_message).substitute(
+                            issue=f"{payload.repository.full_name}#{issue.number}"))
+                        repo_from = get_repo(payload.repository.full_name, payload.installation.id)
+                        gh_issue_from = repo_from.get_issue(issue.number)
+                        gh_issue_from.create_comment(
+                            Template(warning_message).substitute(issue=f"{repo_to.full_name}#{gh_issue.number}"))
 
         self.send_response(201)
         self.end_headers()
