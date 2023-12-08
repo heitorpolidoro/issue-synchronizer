@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler
 from string import Template
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ COMMANDS = ["sync", "synced"]
 ISSUE_SYNCHRONIZER_AREA_TEMPLATE = """
 <!-- ISSUE SYNCHRONIZED:BEGIN -->
 [![synced:$repo#$issue_number](https://img.shields.io/badge/Synched_with-$escaped_repo%23$issue_number-green)](https://github.com/$repo/issues/$issue_number)
-<!-- ISSUE SYNCHRONIZED:END-->
+<!-- ISSUE SYNCHRONIZED:END -->
 """
 
 
@@ -39,10 +40,15 @@ def get_command(body, command_prefix):
     return None
 
 
-def clear_body(body, command_prefixes):
+def clear_body(body):
+    section = "ISSUE SYNCHRONIZED"
     command_prefix = "sync"
     command_pattern = rf"\[{command_prefix}:(.+?)\]"
-    return re.sub(command_pattern, "", body)
+    return re.sub(
+        rf"<!-- *{section}:BEGIN *-->.*<!-- *{section}:END *-->",
+        "",
+        re.sub(command_pattern, "", body),
+        flags=re.DOTALL).strip()
 
 
 # def replace_section(readme_content, section, content):
@@ -54,7 +60,7 @@ def clear_body(body, command_prefixes):
 
 def add_badge(body, repo, issue_number):
     repo_full_name = repo.full_name
-    body = clear_body(body, COMMANDS)
+    body = clear_body(body)
     escaped_repo = repo_full_name.replace("-", "--").replace("_", "__")
     body += "\n" + Template(ISSUE_SYNCHRONIZER_AREA_TEMPLATE).substitute(repo=repo_full_name, issue_number=issue_number,
                                                                          escaped_repo=escaped_repo)
@@ -68,9 +74,12 @@ def create_synced_issue(issue, repo_from, repo_to):
         title=issue.title,
         body=add_badge(issue.body, repo_from, issue.number),
     )
+    logging.info(f"Issue {repo_from.full_name}${synced_issue.number} created")
     issue.edit(body=add_badge(issue.body, repo_to, synced_issue.number))
+    logging.info(f"Issue {repo_to.full_name}${issue.number} updated")
 
 
+@lru_cache
 def get_token(installation_id):
     if not (private_key := os.getenv("PRIVATE_KEY")):
         with open("private-key.pem", "rb") as key_file:
@@ -94,21 +103,57 @@ class Handler(BaseHTTPRequestHandler):
         content_length = int(self.headers['Content-Length'])
         body = self.rfile.read(content_length)
         payload = dict_to_obj(json.loads(body))
-        print(payload.action)
-        if payload.issue.user.type != "Bot":
+        action = payload.action
+        if payload.sender.type != "Bot":
             if issue := payload.issue:
-                if payload.action == "opened":
-                    logging.info("Issue opened: " + issue.title)
+                logging.info(f"Issue {action}: {payload.repository.full_name}#{issue.number}")
+                if action == "opened":
                     repo_to_sync = get_command(issue.body, "sync")
                     if repo_to_sync:
-                        token = get_token(payload.installation.id)
-                        repo_from = Github(token).get_repo(payload.repository.full_name)
-                        repo_to = Github(token).get_repo(repo_to_sync)
+                        repo_from = get_repo(payload.repository.full_name, payload.installation.id)
+                        repo_to = get_repo(repo_to_sync, payload.installation.id)
                         gh_issue = repo_from.get_issue(issue.number)
                         create_synced_issue(gh_issue, repo_from, repo_to)
+                else:
+                    issue_to_sync = get_command(issue.body, "synced")
+                    if issue_to_sync:
+                        repo_to_sync, issue_number = issue_to_sync.split("#")
+                        repo_to = get_repo(repo_to_sync, payload.installation.id)
+                        gh_issue = repo_to.get_issue(int(issue_number))
+                        logging.info(f"Updating issue {repo_to.full_name}#{gh_issue.number}")
+                        if action == "edited":
+                            changes = {}
+                            for changed_field in payload.changes.__dict__.keys():
+                                logging.info(f"Changed field: {changed_field}")
+                                changes[changed_field] = getattr(issue, changed_field)
+                                if changed_field == "body":
+                                    changes[changed_field] = add_badge(
+                                        clear_body(changes[changed_field]),
+                                        payload.repository,
+                                        issue.number)
+                            gh_issue.edit(**changes)
+                        elif action == "labeled":
+                            gh_issue.add_to_labels(payload.label.name)
+                        elif action == "unlabeled":
+                            gh_issue.remove_from_labels(payload.label.name)
+                        elif action == "assigned":
+                            gh_issue.add_to_assignees(payload.assignee.login)
+                        elif action == "unassigned":
+                            gh_issue.remove_from_assignees(payload.assignee.login)
+                        elif action == "closed":
+                            gh_issue.edit(state="closed", state_reason=issue.state_reason)
+                        elif action == "reopened":
+                            gh_issue.edit(state="open")
+                        else:
+                            logging.info(f"Ignoring action {action}")
 
         # handle payload here
         # print(payload)
 
         self.send_response(201)
         self.end_headers()
+
+
+def get_repo(full_name, installation_id):
+    token = get_token(installation_id)
+    return Github(token).get_repo(full_name)
