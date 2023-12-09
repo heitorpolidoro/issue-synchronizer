@@ -13,16 +13,15 @@ logging.basicConfig(level=logging.INFO)
 
 YOUR_APP_ID = 684296
 
-COMMANDS = ["sync", "synced"]
-ISSUE_SYNCHRONIZER_AREA_TEMPLATE = """
-<!-- ISSUE SYNCHRONIZED:BEGIN -->
+SECTION = "ISSUE SYNCHRONIZER"
+ISSUE_SYNCHRONIZER_AREA_TEMPLATE = f"""
+<!-- {SECTION}:BEGIN -->
 <!-- Do not remove os change this or the synchronization will stop -->
 [![synced:$repo#$issue_number](https://img.shields.io/badge/Synched_with-$escaped_repo%23$issue_number-green)](https://github.com/$repo/issues/$issue_number)
-<!-- ISSUE SYNCHRONIZED:END -->
+<!-- {SECTION}:END -->
 """
 
 SECTION_PATTERN = r"<!-- *$section:BEGIN *-->.*<!-- *$section:END *-->"
-SECTION = "ISSUE SYNCHRONIZED"
 
 
 def dict_to_obj(d: dict) -> SimpleNamespace:
@@ -103,12 +102,11 @@ class Handler(BaseHTTPRequestHandler):
         if payload.sender.type != "Bot":
             if issue := payload.issue:
                 logging.info(f"Issue {action}: {payload.repository.full_name}#{issue.number}")
-                if action == "opened":
-                    if repo_to_sync := get_command(issue.body, "sync"):
-                        repo_from = get_repo(payload.repository.full_name, payload.installation.id)
-                        repo_to = get_repo(repo_to_sync, payload.installation.id)
-                        gh_issue = repo_from.get_issue(issue.number)
-                        create_synced_issue(gh_issue, repo_from, repo_to)
+                if repo_to_sync := get_command(issue.body, "sync"):
+                    repo_from = get_repo(payload.repository.full_name, payload.installation.id)
+                    repo_to = get_repo(repo_to_sync, payload.installation.id)
+                    gh_issue = repo_from.get_issue(issue.number)
+                    create_synced_issue(gh_issue, repo_from, repo_to)
                 else:
                     if issue_to_sync := get_command(issue.body, "synced"):
                         repo_to_sync, issue_number = issue_to_sync.split("#")
