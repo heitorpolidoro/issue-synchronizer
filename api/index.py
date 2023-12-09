@@ -16,6 +16,7 @@ YOUR_APP_ID = 684296
 COMMANDS = ["sync", "synced"]
 ISSUE_SYNCHRONIZER_AREA_TEMPLATE = """
 <!-- ISSUE SYNCHRONIZED:BEGIN -->
+<!-- Do not remove os change this or the synchronization will stop -->
 [![synced:$repo#$issue_number](https://img.shields.io/badge/Synched_with-$escaped_repo%23$issue_number-green)](https://github.com/$repo/issues/$issue_number)
 <!-- ISSUE SYNCHRONIZED:END -->
 """
