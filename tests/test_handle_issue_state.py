@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.app import handle_tasklist, handle_issue_state
+from src.app import handle_issue_state, handle_tasklist
 
 
 @pytest.fixture
