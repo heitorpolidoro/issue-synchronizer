@@ -5,13 +5,10 @@ import pytest
 from src.app import handle_create_or_edit
 from tests.conftest import event
 
-
 # @pytest.fixture(autouse=True)
 # def gh():
 #     with patch("app.Github") as gh:
 #         yield gh
-
-
 
 
 def test_handle_create_or_edit(event):
@@ -22,8 +19,6 @@ def test_handle_create_or_edit(event):
         handle_create_or_edit(event)
         handle_tasklist.assert_called_once_with(event)
         add_to_project.assert_called_once_with(event)
-
-
 
 
 # def test_handle_issue_sync(event, issue, gh):

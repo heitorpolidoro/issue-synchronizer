@@ -1,4 +1,3 @@
-from github_app_utils.handler import Handler as GAUHandler
 import json
 import logging
 import os
@@ -9,6 +8,7 @@ from string import Template
 from types import SimpleNamespace
 
 from github import Github, GithubIntegration
+from github_app_utils.handler import Handler as GAUHandler
 
 logging.basicConfig(level=logging.INFO)
 
@@ -69,6 +69,7 @@ app = Flask(__name__)
 @app.route("/")
 def hello_world():
     return "<p>Hello, World!</p>"
+
 
 # class Handlerr(GAUHandler):
 #     pass

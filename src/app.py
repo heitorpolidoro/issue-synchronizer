@@ -6,19 +6,18 @@ import logging
 import os
 import re
 import sys
-from typing import Union, Optional
+from typing import Optional, Union
 
 import sentry_sdk
 from flask import Flask
 from github import Github, UnknownObjectException
 from github.Issue import Issue
 from github.Repository import Repository
-
-import tests.conftest
+from githubapp import webhook_handler
+from githubapp.events import IssueOpenedEvent, IssuesEvent
 from githubapp.events.issues import IssueEditedEvent
 
-from githubapp import webhook_handler
-from githubapp.events import IssuesEvent, IssueOpenedEvent
+import tests.conftest
 
 logging.basicConfig(
     stream=sys.stdout,
@@ -110,7 +109,6 @@ def get_issue(gh: Github, repository: Repository, task: str) -> Optional[Issue]:
     return repository.get_issue(int(issue_number))
 
 
-
 def add_to_project(event):
     pass
 
@@ -149,9 +147,7 @@ def handle_tasklist(event: IssuesEvent):
                 repository_name = task
                 title = issue.title
 
-            if not (
-                issue_repository := get_repository(gh, repository_name)
-            ):
+            if not (issue_repository := get_repository(gh, repository_name)):
                 issue_repository = repository
                 title = task
             created_issue = issue_repository.create_issue(title=title)
